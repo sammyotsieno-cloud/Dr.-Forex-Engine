@@ -21,8 +21,15 @@ def test_repository_analyzer_parses_project():
 
 def test_intent_interpreter_preserves_constraints():
     intent = IntentInterpreter().interpret("Add research without bypassing human approval")
+    assert intent is not None
     assert intent.objective.startswith("Add research")
     assert intent.prohibited_changes
+
+
+def test_intent_interpreter_recognizes_absent_intent():
+    assert IntentInterpreter().interpret(None) is None
+    assert IntentInterpreter().interpret("") is None
+    assert IntentInterpreter().interpret("   ") is None
 
 
 def test_intent_consistency_detects_explicit_bypass():
@@ -32,12 +39,27 @@ def test_intent_consistency_detects_explicit_bypass():
     assert not assessment.consistent
 
 
+def test_intent_consistency_treats_missing_intent_as_neutral():
+    project = ProjectIntentStore().load_project_intent()
+    assessment = IntentConsistencyAnalyzer().check_intent_consistency(None, project, [])
+    assert assessment.consistent
+    assert not assessment.conflicts
+
+
 def test_diagnostic_engine_produces_report():
     evidence = EvidenceBundle(files={"import-check.log": "ModuleNotFoundError: missing_module"})
     report = DiagnosticEngine().diagnose(evidence)
     assert report.failures
     assert report.failures[0].failure_type == FailureType.IMPORT
     assert report.root_causes
+
+
+def test_diagnostic_engine_runs_without_user_intent():
+    evidence = EvidenceBundle(files={"import-check.log": "ModuleNotFoundError: missing_module"})
+    report = DiagnosticEngine().diagnose(evidence, user_intent=None)
+    assert report.failures
+    assert report.intent_consistent
+    assert any("No current user intention was supplied" in finding.description for finding in report.findings)
 
 
 def test_evidence_collector_reads_known_files(tmp_path):
