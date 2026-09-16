@@ -1,3 +1,5 @@
+import re
+
 from app.models.intent import IntentAssessment, ProjectIntent, UserIntent
 
 
@@ -7,14 +9,7 @@ class IntentConsistencyAnalyzer:
         prohibited = [item for item in user_intent.prohibited_changes if item.lower() in text]
         protected = [item for item in project_intent.protected_capabilities if self._conflicts_with(item, text)]
         conflicts = prohibited + protected
-        return IntentAssessment(
-            consistent=not conflicts,
-            conflicts=conflicts,
-            architectural_violations=protected,
-            capability_loss=[],
-            scope_creep=[],
-            preserved_intentions=[item for item in user_intent.desired_capabilities if item.lower() not in text],
-        )
+        return IntentAssessment(consistent=not conflicts, conflicts=conflicts, architectural_violations=protected, preserved_intentions=list(user_intent.desired_capabilities))
 
     def compare_proposed_change_to_intent(self, user_intent: UserIntent, proposed_changes: list[str]) -> IntentAssessment:
         text = " ".join(proposed_changes).lower()
@@ -35,6 +30,5 @@ class IntentConsistencyAnalyzer:
 
     @staticmethod
     def _conflicts_with(protected_item: str, text: str) -> bool:
-        # Conservative default: only explicit removal/disable wording is considered a conflict.
         key_terms = [word for word in protected_item.lower().split() if len(word) > 4]
-        return any(re.search(pattern, text) for word in key_terms for pattern in (rf"remove\s+\w*{word}", rf"disable\s+\w*{word}", rf"bypass\s+\w*{word}"))
+        return any(re.search(rf"\b{verb}\b[^.\n]*\b{re.escape(word)}\b", text) for word in key_terms for verb in ("remove", "disable", "bypass", "delete"))
