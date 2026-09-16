@@ -21,42 +21,156 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install project
+      - name: Collect environment information
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          mkdir -p diagnostics
+
+          {
+            echo "=== SYSTEM ==="
+            uname -a
+            echo
+
+            echo "=== PYTHON ==="
+            python --version
+            which python
+            echo
+
+            echo "=== PIP ==="
+            python -m pip --version
+            echo
+
+            echo "=== INSTALLED PACKAGES ==="
+            python -m pip list
+            echo
+
+            echo "=== GIT ==="
+            git status --short
+            git log -1 --oneline
+            echo
+
+            echo "=== PROJECT TREE ==="
+            find . -maxdepth 3 -type f \
+              -not -path "./.git/*" \
+              -not -path "./.venv/*" \
+              | sort
+          } | tee diagnostics/environment.txt
+
+      - name: Install project
+        id: install
+        run: |
+          set -o pipefail
+
+          {
+            echo "=== INSTALL PROJECT ==="
+            python -m pip install --upgrade pip
+            python -m pip install -e ".[dev]"
+          } 2>&1 | tee diagnostics/install.log
+
+      - name: Verify installation
+        if: always()
+        run: |
+          set -o pipefail
+
+          {
+            echo "=== INSTALLED PROJECT ==="
+            python -m pip show dr-forex-engine || true
+            echo
+
+            echo "=== IMPORT CHECK ==="
+            python -c "import app; print('app import: OK')"
+            python -c "from app.main import app; print('FastAPI application import: OK')"
+          } 2>&1 | tee diagnostics/import-check.log
 
       - name: Run tests
+        id: tests
+        if: steps.install.outcome == 'success'
         run: |
-          pytest
+          set -o pipefail
+
+          pytest \
+            -vv \
+            -rA \
+            --tb=long \
+            --showlocals \
+            2>&1 | tee diagnostics/pytest.log
 
       - name: Build Python package
+        id: package
+        if: steps.tests.outcome == 'success'
         run: |
-          python -m pip install --upgrade build
-          python -m build
+          set -o pipefail
+
+          {
+            echo "=== PACKAGE BUILD ==="
+            python -m pip install --upgrade build
+            python -m build
+          } 2>&1 | tee diagnostics/package-build.log
 
       - name: Generate source artifact
+        if: steps.package.outcome == 'success'
         run: |
           mkdir -p artifact
+
           cp -r app artifact/
           cp -r tests artifact/
           cp pyproject.toml artifact/
           cp README.md artifact/
 
+      - name: Generate build summary
+        if: always()
+        run: |
+          {
+            echo "# Dr. Forex Engine — Build Diagnostics"
+            echo
+            echo "## Workflow"
+            echo "- Run: ${{ github.run_number }}"
+            echo "- Commit: ${{ github.sha }}"
+            echo "- Branch: ${{ github.ref_name }}"
+            echo "- Trigger: manual (\`workflow_dispatch\`)"
+            echo
+            echo "## Step Results"
+            echo "| Step | Result |"
+            echo "|---|---|"
+            echo "| Installation | ${{ steps.install.outcome }} |"
+            echo "| Tests | ${{ steps.tests.outcome }} |"
+            echo "| Package build | ${{ steps.package.outcome }} |"
+            echo
+            echo "## Diagnostic Files"
+            echo '```text'
+            find diagnostics -type f | sort
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Upload Python package artifacts
+        if: steps.package.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: dr-forex-engine-package
-          path: |
-            dist/
+          path: dist/
           if-no-files-found: error
           retention-days: 30
 
       - name: Upload source artifact
+        if: steps.package.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: dr-forex-engine-source
-          path: |
-            artifact/
+          path: artifact/
           if-no-files-found: error
           retention-days: 30
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dr-forex-engine-diagnostics
+          path: diagnostics/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Final failure report
+        if: failure()
+        run: |
+          echo "::error::Dr. Forex Engine build failed."
+          echo "Detailed diagnostics have been uploaded as the 'dr-forex-engine-diagnostics' artifact."
+          echo "Review the failed step above and download the diagnostics artifact for additional information."
