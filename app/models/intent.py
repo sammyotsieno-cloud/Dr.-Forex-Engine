@@ -5,10 +5,14 @@ from typing import Any
 @dataclass
 class UserIntent:
     objective: str
+    objectives: list[str] = field(default_factory=list)
     desired_capabilities: list[str] = field(default_factory=list)
     constraints: list[str] = field(default_factory=list)
     prohibited_changes: list[str] = field(default_factory=list)
     affected_components: list[str] = field(default_factory=list)
+    measurement_criteria: list[str] = field(default_factory=list)
+    acceptance_criteria: list[str] = field(default_factory=list)
+    source_statements: list[str] = field(default_factory=list)
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
