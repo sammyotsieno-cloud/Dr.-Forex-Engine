@@ -27,7 +27,7 @@ class FailureAnalyzer:
     def extract_error_messages(self, content: str) -> list[str]:
         patterns = (
             r"(?:ERROR|Error|E)[: ]+(.+)",
-            r"(?:ImportError|ModuleNotFoundError|SyntaxError|TypeError|ValueError|AssertionError):\s*(.+)",
+            r"((?:ImportError|ModuleNotFoundError|SyntaxError|TypeError|ValueError|AssertionError):\s*.+)",
         )
         messages: list[str] = []
         for pattern in patterns:
