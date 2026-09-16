@@ -12,6 +12,15 @@ def test_failure_analyzer_classifies_import_failure():
     assert analyzer.classify_failure("import-check.log", "ModuleNotFoundError: missing") == FailureType.IMPORT
 
 
+def test_failure_analyzer_preserves_import_exception_marker_through_analysis():
+    analyzer = FailureAnalyzer()
+    bundle = EvidenceBundle(files={"import-check.log": "ModuleNotFoundError: missing_module"})
+    failures = analyzer.analyze(bundle)
+    assert failures
+    assert failures[0].message == "ModuleNotFoundError: missing_module"
+    assert failures[0].failure_type == FailureType.IMPORT
+
+
 def test_repository_analyzer_parses_project():
     from app.core.repository_analyzer import RepositoryAnalyzer
     result = RepositoryAnalyzer().scan_repository(".")
