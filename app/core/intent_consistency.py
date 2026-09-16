@@ -4,14 +4,25 @@ from app.models.intent import IntentAssessment, ProjectIntent, UserIntent
 
 
 class IntentConsistencyAnalyzer:
-    def check_intent_consistency(self, user_intent: UserIntent, project_intent: ProjectIntent, proposed_changes: list[str]) -> IntentAssessment:
+    def check_intent_consistency(
+        self,
+        user_intent: UserIntent | None,
+        project_intent: ProjectIntent,
+        proposed_changes: list[str],
+    ) -> IntentAssessment:
+        """Check user intent when supplied; absence of intent is not a conflict."""
+        if user_intent is None:
+            return IntentAssessment(consistent=True)
+
         text = " ".join(proposed_changes).lower()
         prohibited = [item for item in user_intent.prohibited_changes if item.lower() in text]
         protected = [item for item in project_intent.protected_capabilities if self._conflicts_with(item, text)]
         conflicts = prohibited + protected
         return IntentAssessment(consistent=not conflicts, conflicts=conflicts, architectural_violations=protected, preserved_intentions=list(user_intent.desired_capabilities))
 
-    def compare_proposed_change_to_intent(self, user_intent: UserIntent, proposed_changes: list[str]) -> IntentAssessment:
+    def compare_proposed_change_to_intent(self, user_intent: UserIntent | None, proposed_changes: list[str]) -> IntentAssessment:
+        if user_intent is None:
+            return IntentAssessment(consistent=True)
         text = " ".join(proposed_changes).lower()
         conflicts = [item for item in user_intent.prohibited_changes if item.lower() in text]
         return IntentAssessment(consistent=not conflicts, conflicts=conflicts)
@@ -24,7 +35,9 @@ class IntentConsistencyAnalyzer:
         text = " ".join(proposed_changes).lower()
         return [item for item in project_intent.architectural_constraints if self._conflicts_with(item, text)]
 
-    def detect_scope_creep(self, user_intent: UserIntent, proposed_changes: list[str]) -> list[str]:
+    def detect_scope_creep(self, user_intent: UserIntent | None, proposed_changes: list[str]) -> list[str]:
+        if user_intent is None:
+            return []
         objective_terms = set(user_intent.objective.lower().split())
         return [change for change in proposed_changes if not objective_terms.intersection(change.lower().split())]
 
