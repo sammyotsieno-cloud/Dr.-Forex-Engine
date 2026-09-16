@@ -41,6 +41,30 @@ def test_intent_interpreter_recognizes_absent_intent():
     assert IntentInterpreter().interpret("   ") is None
 
 
+def test_intent_interpreter_recognizes_multiple_refined_intentions():
+    request = """
+    1. Improve the research engine.
+    2. Preserve historical validation.
+    3. Add robustness testing.
+    4. Do not bypass human approval.
+    5. Keep research separate from live execution.
+    6. Measurement target: at least 500 candidate configurations.
+    7. Acceptance: all required validation checks pass.
+    """
+    intent = IntentInterpreter().interpret(request)
+    assert intent is not None
+    assert len(intent.source_statements) == 7
+    assert len(intent.objectives) >= 5
+    assert any("500 candidate configurations" in item for item in intent.measurement_criteria)
+    assert any("all required validation checks pass" in item for item in intent.acceptance_criteria)
+    assert intent.prohibited_changes
+
+
+def test_intent_interpreter_identifies_undefined_improvement_measurement():
+    interpreter = IntentInterpreter()
+    assert interpreter.resolve_ambiguity("Improve the research engine.")
+
+
 def test_intent_consistency_detects_explicit_bypass():
     user = IntentInterpreter().interpret("Improve research")
     project = ProjectIntentStore().load_project_intent()
