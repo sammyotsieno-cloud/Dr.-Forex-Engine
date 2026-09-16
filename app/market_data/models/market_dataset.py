@@ -15,6 +15,9 @@ class DatasetProvenance:
     requested_end: datetime
     acquired_at: datetime
     source_reference: str | None = None
+    broker: str | None = None
+    server: str | None = None
+    provider_symbol: str | None = None
 
     def __post_init__(self) -> None:
         for value in (self.requested_start, self.requested_end, self.acquired_at):
