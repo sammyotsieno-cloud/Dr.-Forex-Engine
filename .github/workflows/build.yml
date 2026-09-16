@@ -2,6 +2,12 @@ name: Build and Test
 
 on:
   workflow_dispatch:
+    inputs:
+      user_intent:
+        description: "Optional current user intention for the diagnostic pass"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -106,6 +112,20 @@ jobs:
             python -m build
           } 2>&1 | tee diagnostics/package-build.log
 
+      - name: Run self-diagnostic engine
+        id: self_diagnostic
+        if: always() && steps.install.outcome == 'success'
+        continue-on-error: true
+        env:
+          USER_INTENT: ${{ inputs.user_intent }}
+        run: |
+          set -o pipefail
+          if [ -n "$USER_INTENT" ]; then
+            python -m app.jobs.run_diagnostics diagnostics --repository . --intent "$USER_INTENT" 2>&1 | tee diagnostics/self-diagnostic.log
+          else
+            python -m app.jobs.run_diagnostics diagnostics --repository . 2>&1 | tee diagnostics/self-diagnostic.log
+          fi
+
       - name: Generate source artifact
         if: steps.package.outcome == 'success'
         run: |
@@ -134,6 +154,7 @@ jobs:
             echo "| Installation | ${{ steps.install.outcome }} |"
             echo "| Tests | ${{ steps.tests.outcome }} |"
             echo "| Package build | ${{ steps.package.outcome }} |"
+            echo "| Self-diagnostic | ${{ steps.self_diagnostic.outcome }} |"
             echo
             echo "## Diagnostic Files"
             echo '```text'
