@@ -56,10 +56,20 @@ class MarketDataPipeline:
             requested_start=request.start,
             requested_end=request.end,
             acquired_at=acquired_at,
+            source_reference=getattr(source, "source_reference", None),
+            broker=getattr(source, "broker", None),
+            server=getattr(source, "server", None),
+            provider_symbol=request.instrument.provider_symbol or request.instrument.symbol,
         )
         return self.process(records, request.instrument, request.timeframe, provenance)
 
-    def process(self, records: list[dict], instrument: Instrument, timeframe: str, provenance: DatasetProvenance) -> MarketDataset:
+    def process(
+        self,
+        records: list[dict],
+        instrument: Instrument,
+        timeframe: str,
+        provenance: DatasetProvenance,
+    ) -> MarketDataset:
         structural = self.structural.validate(records)
         if not structural.is_valid:
             raise DataIntegrityError(structural)
