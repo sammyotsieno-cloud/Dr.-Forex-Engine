@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.models.repair import RepairProposal, VerificationPlan
+
 
 class FailureType(str, Enum):
     INSTALLATION = "installation"
@@ -59,6 +61,8 @@ class DiagnosticReport:
     intent_consistent: bool = True
     confidence: float = 0.0
     unknowns: list[str] = field(default_factory=list)
+    repair_proposal: RepairProposal | None = None
+    verification_plan: VerificationPlan | None = None
 
 
 @dataclass
