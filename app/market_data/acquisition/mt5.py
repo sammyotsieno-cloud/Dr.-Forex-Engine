@@ -1,7 +1,7 @@
 """MetaTrader 5 acquisition adapter for user-selected broker connections.
 
-The adapter deliberately keeps MT5/provider concerns at the acquisition boundary.
-Raw provider observations are passed downstream unchanged; Phase 1 validation
+The adapter keeps MT5/provider concerns at the acquisition boundary. Raw
+provider observations are passed downstream unchanged; Phase 1 validation
 remains responsible for deciding whether data is safe for research.
 """
 
@@ -25,16 +25,17 @@ class MT5Capabilities:
 
     def supports(self, request: DataRequest) -> bool:
         symbol = request.instrument.provider_symbol or request.instrument.symbol
-        return symbol.upper() in {item.upper() for item in self.available_symbols} and request.timeframe in self.supported_timeframes
+        return (
+            symbol.upper() in {item.upper() for item in self.available_symbols}
+            and request.timeframe in self.supported_timeframes
+        )
 
 
 class MT5Connection:
-    """Thin, reusable connection boundary around the MetaTrader 5 terminal.
+    """Reusable connection boundary around the MetaTrader 5 terminal.
 
     Credentials are supplied only to the terminal connection call and are never
-    retained by this object. The same connection can later serve research,
-    demo, and controlled-live layers; permission to trade is intentionally not
-    granted by this class.
+    retained by this object. Connection does not grant trading authority.
     """
 
     _TIMEFRAMES = {
@@ -93,14 +94,13 @@ class MT5Connection:
         if symbols is None:
             code, message = self._client.last_error()
             raise RuntimeError(f"MT5 symbol discovery failed ({code}): {message}")
-        terminal_name = getattr(terminal, "name", None) if terminal else None
-        broker = getattr(account, "company", None) if account else None
-        server = getattr(account, "server", None) if account else None
         return MT5Capabilities(
-            broker=broker,
-            server=server,
-            terminal=terminal_name,
-            available_symbols=tuple(getattr(item, "name", "") for item in symbols if getattr(item, "name", "")),
+            broker=getattr(account, "company", None) if account else None,
+            server=getattr(account, "server", None) if account else None,
+            terminal=getattr(terminal, "name", None) if terminal else None,
+            available_symbols=tuple(
+                item.name for item in symbols if getattr(item, "name", "")
+            ),
             supported_timeframes=tuple(self._TIMEFRAMES),
         )
 
@@ -135,12 +135,26 @@ class MT5DataSource(MarketDataSource):
     def __init__(self, connection: MT5Connection) -> None:
         self.connection = connection
 
+    @property
+    def broker(self) -> str | None:
+        return self.connection.capabilities().broker
+
+    @property
+    def server(self) -> str | None:
+        return self.connection.capabilities().server
+
+    @property
+    def source_reference(self) -> str:
+        return "MT5 terminal / broker server"
+
     def fetch(self, request: DataRequest) -> list[dict[str, Any]]:
         self.connection._require_connection()
         capabilities = self.connection.capabilities()
         symbol = request.instrument.provider_symbol or request.instrument.symbol
-        if symbol.upper() not in {item.upper() for item in capabilities.available_symbols}:
-            raise ValueError(f"MT5 symbol is unavailable: {symbol}")
+        if not capabilities.supports(request):
+            raise ValueError(
+                f"MT5 cannot satisfy request for symbol={symbol}, timeframe={request.timeframe}"
+            )
         timeframe = self.connection.timeframe_constant(request.timeframe)
         start = request.start.astimezone(timezone.utc)
         end = request.end.astimezone(timezone.utc)
@@ -155,7 +169,7 @@ class MT5DataSource(MarketDataSource):
 
     @staticmethod
     def _to_raw_record(row: Any) -> dict[str, Any]:
-        timestamp = row["time"] if isinstance(row, dict) else row["time"]
+        timestamp = row["time"]
         if isinstance(timestamp, (int, float)):
             timestamp = datetime.fromtimestamp(timestamp, tz=timezone.utc)
         return {
@@ -166,8 +180,5 @@ class MT5DataSource(MarketDataSource):
             "close": row["close"],
             "tick_volume": int(row["tick_volume"]),
             "volume": int(row["real_volume"]),
-            # MT5's bar 'spread' is provider points, not a price difference.
-            # Preserve it as provider metadata instead of misrepresenting it as
-            # the canonical bid/ask price spread.
             "provider_spread_points": int(row["spread"]),
         }
