@@ -19,20 +19,34 @@ class DiagnosticEngine:
         self.verification_planner = VerificationPlanner()
         self.project_intent = project_intent or ProjectIntentStore()
 
-    def diagnose(self, evidence: EvidenceBundle, repository_root: str | None = None, user_intent: UserIntent | None = None) -> DiagnosticReport:
+    def diagnose(
+        self,
+        evidence: EvidenceBundle,
+        repository_root: str | None = None,
+        user_intent: UserIntent | None = None,
+    ) -> DiagnosticReport:
+        """Run diagnosis even when no current user intention was supplied."""
         failures = self.failure_analyzer.analyze(evidence)
         repository = self.repository_analyzer.scan_repository(repository_root) if repository_root else {}
         roots = self.root_cause.find_root_causes(failures, repository)
         findings = [DiagnosticFinding(category="failure", description=f.message, evidence=f.evidence_sources) for f in failures]
-        unknowns = []
+        unknowns: list[str] = []
+
         if not failures:
             unknowns.append("No recognizable failure was found in the supplied evidence.")
 
         project_intent = self.project_intent.load_project_intent()
-        consistent = True
-        if user_intent:
+        if user_intent is None:
+            findings.append(
+                DiagnosticFinding(
+                    category="intent",
+                    description="No current user intention was supplied; diagnosis continued using build evidence, repository state, and project intent.",
+                )
+            )
+        else:
             assessment = self.intent_analyzer.check_intent_consistency(user_intent, project_intent, [])
-            consistent = assessment.consistent
+            if not assessment.consistent:
+                unknowns.extend(assessment.conflicts)
 
         affected_files = list(dict.fromkeys(
             failure.location.file for failure in failures if failure.location.file
@@ -44,7 +58,7 @@ class DiagnosticEngine:
                 [item for root in roots for item in root.evidence],
             )
             proposed_descriptions = [change.reason for change in proposal.changes]
-            if user_intent:
+            if user_intent is not None:
                 assessment = self.intent_analyzer.check_intent_consistency(user_intent, project_intent, proposed_descriptions)
                 proposal.intent_preserved = assessment.consistent
                 if not assessment.consistent:
@@ -62,7 +76,7 @@ class DiagnosticEngine:
             failures=failures,
             root_causes=roots,
             findings=findings,
-            intent_consistent=consistent,
+            intent_consistent=True if user_intent is None else assessment.consistent,
             confidence=confidence,
             unknowns=unknowns,
             repair_proposal=proposal,
